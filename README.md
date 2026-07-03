@@ -53,7 +53,7 @@ lake env lean test_introspect.lean   # smoke test
 
 ## why a leakage report
 
-a kernel accept is not the end of the audit. a proof can be accepted and vacuous (autoImplicit generalization), accepted and incomplete (`sorry` elaborates with a warning and exit code 0), accepted and classical where you expected constructive (check `dependency_surface`). `#introspect` exposes the evidence a retention gate needs to refuse those.
+a kernel accept does not settle whether the proof is what you meant. a proof can be accepted and vacuous (autoImplicit generalization), accepted and incomplete (`sorry` elaborates with a warning and exit code 0), accepted and classical where you expected constructive (check `dependency_surface`). `#introspect` exposes the evidence a retention gate needs to refuse those.
 
 ## related
 
