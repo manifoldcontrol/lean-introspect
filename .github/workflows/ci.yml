@@ -1,0 +1,17 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          use-mathlib-cache: true
+      - name: smoke test (introspect emits markers)
+        run: |
+          lake env lean test_introspect.lean | tee out.txt
+          grep -q -- "---PROOFTERM-DAG-BEGIN---" out.txt
+          grep -q '"status": "closed"' out.txt || grep -q '"status":"closed"' out.txt
