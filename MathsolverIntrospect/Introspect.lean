@@ -45,9 +45,9 @@ deriving Lean.ToJson
 /-- The transport output. Compatible with the Python `proof_term_dag.py` reader. -/
 structure ProofTermDAG where
   candidate_name : String
-  /-- "closed" — no metavariables, no sorry; the kernel accepted a complete term.
-      "open"   — at least one unresolved metavariable or sorry was found.
-      "missing" — the constant was not in the environment. -/
+  /-- "closed" - no metavariables, no sorry; the kernel accepted a complete term.
+      "open"   - at least one unresolved metavariable or sorry was found.
+      "missing" - the constant was not in the environment. -/
   status : String
   uses_sorry : Bool
   nodes : Array DAGNode
@@ -68,7 +68,7 @@ structure WalkState where
 abbrev BuildM := StateM WalkState
 
 /-- Recursively walk a `Lean.Expr`, emitting one node per subterm and edges
-    from parent to child. The walker is pure (StateM) — no kernel calls, no
+    from parent to child. The walker is pure (StateM) - no kernel calls, no
     metavariable instantiation; it inspects the Expr structure as-is. -/
 partial def walkExpr (e : Expr) : BuildM String := do
   let s ← get
