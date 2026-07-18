@@ -54,6 +54,18 @@ structure ProofTermDAG where
   edges : Array DAGEdge
   dependency_surface : Array String
   unresolved_mvars : Array String
+  /-- Pretty-printed elaborated type of the constant: what the kernel actually
+      accepted. Compare it against a declared type to catch autoImplicit
+      generalization and similar statement drift. Empty when missing. -/
+  elaborated_type : String := ""
+  /-- Heartbeats consumed by this elaboration thread at emit time: a
+      deterministic per-file cost measure (one candidate per file makes it
+      per-candidate). -/
+  heartbeats : Nat := 0
+  /-- Kernel-transitive axiom set, as `#print axioms` reports it. The
+      dependency surface below is a DIRECT scan and cannot see an axiom minted
+      behind a same-file helper; this can. Empty array = not checked. -/
+  axioms : Array String := #[]
 deriving Lean.ToJson
 
 /-- Internal state for the DAG walker. -/
@@ -64,16 +76,32 @@ structure WalkState where
   deps : Lean.NameSet := {}
   mvars : Array String := #[]
   usesSorry : Bool := false
+  /-- Memo from a visited `Expr` to its node id. Expr's cached hash plus
+      pointer-first equality make this cheap. -/
+  cache : Std.HashMap Expr String := {}
 
 abbrev BuildM := StateM WalkState
 
-/-- Recursively walk a `Lean.Expr`, emitting one node per subterm and edges
-    from parent to child. The walker is pure (StateM) - no kernel calls, no
-    metavariable instantiation; it inspects the Expr structure as-is. -/
+/-- Recursively walk a `Lean.Expr`, emitting one node per DISTINCT subterm and
+    edges from parent to child. The walk is memoized on `Expr` identity: a shared
+    subterm is visited once, and later parents link to the existing node rather
+    than re-walking it, so the output is a genuine DAG and node/edge counts are
+    true DAG sizes.
+
+    Without the memo the walker expands sharing as a tree, which is exponential
+    in sharing depth -- reflection-style certificates (`ring`, `field_simp`,
+    `nlinarith`) stack it deeply. Measured: a 3-variable `by ring` identity
+    elaborates in ~0.2s and then hangs the walk for >150s.
+
+    The walker is pure (StateM) - no kernel calls, no metavariable
+    instantiation; it inspects the Expr structure as-is. -/
 partial def walkExpr (e : Expr) : BuildM String := do
   let s ← get
+  if let some cachedId := s.cache[e]? then
+    return cachedId
   let id := s!"n{s.counter}"
-  modify fun s => { s with counter := s.counter + 1 }
+  modify fun s => { s with counter := s.counter + 1,
+                           cache := s.cache.insert e id }
   match e with
   | .const n _ =>
     modify fun s =>
@@ -212,6 +240,21 @@ def elabIntrospect : CommandElab := fun stx => do
           dependency_surface := #[]
           unresolved_mvars := #[] }
       | some info => buildDAG info
+    let typeStr : String ← match env.find? name with
+      | some info => do
+          let fmt ← liftCoreM <| Lean.Meta.MetaM.run' (Lean.Meta.ppExpr info.type)
+          pure (toString fmt)
+      | none => pure ""
+    let axArr : Array String ← match env.find? name with
+      | some _ => do
+          try
+            let axs ← liftCoreM <| Lean.collectAxioms name
+            pure (axs.map toString)
+          catch _ => pure #[]
+      | none => pure #[]
+    let hb ← IO.getNumHeartbeats
+    let dag := { dag with elaborated_type := typeStr, heartbeats := hb,
+                          axioms := axArr }
     let json := (Lean.toJson dag).pretty
     IO.println "---PROOFTERM-DAG-BEGIN---"
     IO.println json
